@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reward Arcade</title>
+<meta name="description" content="A hands-on lab for what an RL environment for LLM training actually is, and why it is the same object as an eval: play a real environment, find its leak, farm its reward, and run a tournament with error bars.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M12 58V18q0-6 6-6h28q6 0 6 6v40z' fill='%239CCBEA' stroke='%234A2E1E' stroke-width='4' stroke-linejoin='round'/%3E%3Crect x='8' y='6' width='48' height='12' rx='3' fill='%23C8452F' stroke='%234A2E1E' stroke-width='4'/%3E%3Crect x='20' y='24' width='24' height='16' rx='2' fill='%232F4A3A' stroke='%234A2E1E' stroke-width='3'/%3E%3Ccircle cx='26' cy='48' r='4' fill='%23F4C430' stroke='%234A2E1E' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Grandstander:wght@700;800&family=Patrick+Hand&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=20260926a">
+</head>
+<body>
+<!--
+THESIS: An RL environment for LLM training is an arcade cabinet: a sealed box with three controls, a ticket counter inside, and a front glass that decides what the player may see. An eval is the same cabinet with a scoreboard. Sibling of Policy Pond (the learner) and Finishing School (the LLM learner); same design system.
+STORY: play the cabinet, sort its front glass from its back panel, shake the joystick, change the prize rules, run the tournament, compare the arcade to the pond, then fix three broken cabinets.
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><filter id="gouache" x="-2%" y="-2%" width="104%" height="104%"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="3" result="w"/><feDisplacementMap in="SourceGraphic" in2="w" scale="1.3" xChannelSelector="R" yChannelSelector="G"/></filter></defs></svg>
+<div class="wrap">
+<header>
+  <div class="mast"><b>Reward Arcade</b><span>a hands-on lab</span></div>
+  <div><h1>What an RL environment actually is</h1>
+  <p class="sub">Policy Pond taught the learner and Finishing School taught the LLM learner. Neither taught the world they practice in. This is that world: a sealed cabinet with three controls, a ticket counter inside, and a strict rule about what the player may see. About 75 minutes of play, with a real environment running in your browser.</p></div>
+</header>
+
+<nav id="nav" aria-label="Steps"></nav>
+
+<!-- ============ STEP 0 ============ -->
+<section id="s0" data-title="The Cabinet" data-n="0">
+  <div class="card">
+    <div class="scene" data-art="s0"></div>
+    <h2>0 · The cabinet: three controls, one game per seat</h2>
+    <p class="lede">An <span class="g" data-g="environment">environment</span> is the world an agent practices in. For an LLM, <span class="g" data-g="openenv">OpenEnv</span> packages that world as a sealed box running in its own <span class="g" data-g="container">container</span>, with exactly three controls. Every environment has the same three, whether it plays Hangman, Wordle, a code repo or a fake CRM. Every term with a wavy red underline is tappable: hover or tap it for the plain meaning and its arcade equivalent.</p>
+    <div class="kmap">
+      <div><span class="k" data-i="cabinet" aria-hidden="true"></span><b>The environment</b> = the cabinet<br><span class="t">a sealed box; the game logic lives inside</span></div>
+      <div><span class="k" data-i="coin" aria-hidden="true"></span><b><span class="g" data-g="reset">reset()</span></b> = the coin slot<br><span class="t">a fresh game; returns what you see first</span></div>
+      <div><span class="k" data-i="joystick" aria-hidden="true"></span><b><span class="g" data-g="step">step(action)</span></b> = the joystick<br><span class="t">one move; returns the screen, the tickets, and whether it's over</span></div>
+      <div><span class="k" data-i="glass" aria-hidden="true"></span><b><span class="g" data-g="observation">Observation</span></b> = the front glass<br><span class="t">everything the player sees</span></div>
+      <div><span class="k" data-i="hatch" aria-hidden="true"></span><b><span class="g" data-g="state">state()</span></b> = the back panel<br><span class="t">the cabinet's own bookkeeping, behind a service hatch</span></div>
+      <div><span class="k" data-i="tickets" aria-hidden="true"></span><b><span class="g" data-g="reward">Reward</span></b> = tickets<br><span class="t">paid per move by the cabinet, never by the trainer</span></div>
+      <div><span class="k" data-i="light" aria-hidden="true"></span><b><span class="g" data-g="done">done</span></b> = the game-over light<br><span class="t">one flag; it doesn't say <i>why</i> the game ended</span></div>
+      <div><span class="k" data-i="kid" aria-hidden="true"></span><b><span class="g" data-g="policy">Policy</span></b> = the player<br><span class="t">a function from what it sees to a move; later, an LLM</span></div>
+      <div><span class="k" data-i="board" aria-hidden="true"></span><b><span class="g" data-g="eval">Eval</span></b> = the tournament scoreboard<br><span class="t">the same cabinet, scores read by people</span></div>
+    </div>
+    <p class="covers">Covers <b>OpenEnv course Module 1 · the RL loop, the 3-method interface</b> · <b>Module 2 · typed models</b></p>
+  </div>
+
+  <div class="card">
+    <h3>Play the cabinet</h3>
+    <p class="lede sm">This is the course's own Module 4 game, running here logic for logic. A hidden six-letter word; one letter per move; ten wrong guesses and you lose. Drop a coin, then press letters. The tape below prints exactly what each call returned.</p>
+    <div class="pg">
+      <div>
+        <div class="cab" id="s0cab"></div>
+      </div>
+      <div>
+        <div class="lbl">How you're talking to the cabinet</div>
+        <div class="seg" id="s0mode"></div>
+        <div class="callout co-i" id="s0modenote"></div>
+        <div class="grid g4" style="margin-top:12px">
+          <div class="stat"><div class="v" id="s0steps">0</div><div class="l">step_count</div></div>
+          <div class="stat"><div class="v good" id="s0ret">0</div><div class="l">tickets this game</div></div>
+          <div class="stat"><div class="v" id="s0done">no</div><div class="l">done</div></div>
+          <div class="stat"><div class="v acc" id="s0games">0</div><div class="l">games your presses touched</div></div>
+        </div>
+        <div class="lbl" style="margin-top:12px">The ticket tape: what each call returned</div>
+        <div class="tape" id="s0tape"></div>
+      </div>
+    </div>
+    <div class="predict" data-p="s0a">
+      <div class="tag">Guess first!</div>
+      <div class="q">Switch to <b>one-off requests</b> and press a letter, then another. What does the second press see?</div>
+      <div class="opts"><button data-a="0">The same game, one move on</button><button data-a="1" data-right>A brand-new game</button><button data-a="2">An error</button></div>
+      <div class="why">A brand-new game. OpenEnv's plain HTTP <code>/reset</code> and <code>/step</code> are <b>stateless</b>: each call builds a fresh environment, answers, and throws it away. Only a <span class="g" data-g="session">WebSocket session</span> keeps one game alive between calls, which is why the typed client uses <code>/ws</code>. Verified on the real server: two one-off steps of the same wrong letter both reported 9 attempts left.</div>
+    </div>
+    <div class="predict" data-p="s0b">
+      <div class="tag">Guess first!</div>
+      <div class="q">Two trainers open two connections to one cabinet server. Do they share a game?</div>
+      <div class="opts"><button data-a="0">Yes, one server is one game</button><button data-a="1" data-right>No, one connection is one game</button><button data-a="2">Only if they use the same word</button></div>
+      <div class="why">No. Each WebSocket connection gets its own environment instance on the server. That's how one container can serve a whole training batch at once. One catch, from TRL's docs: an OpenEnv server allows <b>1 concurrent session unless its <code>app.py</code> raises <code>max_concurrent_envs</code></b>, so a trainer that opens 64 connections to a default server fails. Set it to at least the generation batch size.</div>
+    </div>
+    <div class="say" data-say="s0">
+      <div class="tag">Say it out loud</div>
+      <div class="line">Reset drops the coin. Step moves the joystick once and returns what I see, the tickets, and whether it's over. State is the back panel. One connection is one game.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STEP 1 ============ -->
+<section id="s1" data-title="Front Glass, Back Panel" data-n="1">
+  <div class="card">
+    <div class="scene" data-art="s1"></div>
+    <h2>1 · Front glass, back panel: who may see what</h2>
+    <p class="lede">The most important design decision in any environment is made in its types file: which fields go on the <span class="g" data-g="observation">observation</span> (the front glass, what the player sees), which go in the <span class="g" data-g="state">state</span> (the back panel: bookkeeping the client can still fetch), and which never leave the server. In RL terms the state is the world's full true situation and the observation is the player's partial view of it. The course's word game puts the secret word in <code>state</code>. Sort the fields yourself, then let a cheater play against your layout.</p>
+    <p class="covers">Covers <b>Module 4 · Step 1, models.py</b> · <b>Module 1 · observation vs state</b> · the study pack's M4 gotcha 5</p>
+  </div>
+  <div class="card">
+    <h3>Sort the eight fields</h3>
+    <p class="lede sm">Tap a field, then tap a bin. (On a computer you can also drag.) The cabinet needs the word to run the game; the question is where it may sit.</p>
+    <div class="tray" id="s1tray"></div>
+    <div class="btnrow"><button class="ghost" id="s1course" type="button">Load the course's layout</button><button class="ghost" id="s1clear" type="button">Clear</button></div>
+    <div class="bins" id="s1bins">
+      <div class="bin" data-bin="obs"><b>Front glass</b><span class="bt">the observation: returned by every step()</span><div class="chips"></div></div>
+      <div class="bin" data-bin="state"><b>Back panel</b><span class="bt">the State model: returned by state()</span><div class="chips"></div></div>
+      <div class="bin" data-bin="server"><b>Sealed inside</b><span class="bt">a private attribute on the server object; never sent</span><div class="chips"></div></div>
+    </div>
+    <div class="grid g2">
+      <div><div class="lbl">what <code>env.state()</code> returns to the client</div><div class="jsonbox" id="s1json"></div></div>
+      <div><div class="lbl">what the player sees after a move</div><div class="jsonbox" id="s1obs"></div></div>
+    </div>
+    <div class="btnrow" style="margin-top:12px"><button class="act" id="s1run" type="button">Let the Cheater play 200 games</button><span class="hand muted">against Random, on your layout</span></div>
+    <div class="grid g2" style="margin-top:10px">
+      <div class="stat big"><div class="v" id="s1cheat">–</div><div class="l">Cheater's win rate</div></div>
+      <div class="stat big"><div class="v" id="s1rand">–</div><div class="l">Random's win rate (the floor)</div></div>
+    </div>
+    <div class="verdict" id="s1verdict"></div>
+    <div class="predict" data-p="s1a">
+      <div class="tag">Guess first!</div>
+      <div class="q">The course keeps <code>target_word</code> in the State model. Can a player read it?</div>
+      <div class="opts"><button data-a="0">No, state is server-side</button><button data-a="1" data-right>Yes, state() is a client method</button><button data-a="2">Only after the game ends</button></div>
+      <div class="why">Yes. <code>env.state()</code> is one of the three client methods, and the server answers it with the whole State model. Verified against the real server: <code>state()</code> came back with <code>target_word='tensor'</code> mid-game. A training loop that ever puts <code>state()</code> in the prompt, or an agent with a tool that calls it, learns to read the answer instead of playing.</div>
+    </div>
+    <div class="predict" data-p="s1b">
+      <div class="tag">Guess first!</div>
+      <div class="q">You "fix" it by deleting <code>target_word</code> in the client's <code>_parse_state</code>. Is the leak closed?</div>
+      <div class="opts"><button data-a="0">Yes, the player can't see it now</button><button data-a="1" data-right>No, the server still sends it</button><button data-a="2">Yes, if you also rename it</button></div>
+      <div class="why">No. The bytes still cross the wire; anyone can write their own client from the server's <code>/schema</code> in twenty lines. A secret has to stay on the server, as a private attribute the game logic reads and nothing serializes. Fix the server's <code>reset()</code>, not the client.</div>
+    </div>
+    <div class="say" data-say="s1">
+      <div class="tag">Say it out loud</div>
+      <div class="line">Anything the client can fetch, assume the player can see. Secrets stay on the server.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STEP 2 ============ -->
+<section id="s2" data-title="Shake the Joystick" data-n="2">
+  <div class="card">
+    <div class="scene" data-art="s2"></div>
+    <h2>2 · Shake the joystick: inputs a good player never sends</h2>
+    <p class="lede">An optimizer doesn't play politely. It sends whatever pays. So before anything trains against a cabinet, send it the moves a good player never would and read what comes back. The course's game has four such holes, all of them found by running it. Each switch below closes one.</p>
+    <p class="covers">Covers <b>Module 4 · Step 2, environment.py</b> · TRL's "raise on invalid actions" rule · the study pack's M4 gotchas 4, 8 and 9</p>
+  </div>
+  <div class="card">
+    <div class="pg">
+      <div class="panel">
+        <div class="lbl">The cabinet's switches (all off = the course as written)</div>
+        <div class="switches">
+          <label class="tg"><input type="checkbox" id="s2coin"><span class="sw"></span>Require a coin first (error on step before reset)</label>
+          <label class="tg"><input type="checkbox" id="s2valid"><span class="sw"></span>Validate: exactly one letter a–z, else error</label>
+          <label class="tg"><input type="checkbox" id="s2guard"><span class="sw"></span>The notebook's guard: a repeated WRONG letter is free (the course charges it again)</label>
+          <label class="tg"><input type="checkbox" id="s2cap"><span class="sw"></span>Step cap: the harness stops a game at 50 moves</label>
+        </div>
+        <div class="lbl" style="margin-top:10px">Send an odd input</div>
+        <div class="odd" id="s2odd"></div>
+      </div>
+      <div>
+        <div class="lbl">What came back</div>
+        <div class="tape" id="s2tape"></div>
+        <div class="lbl" style="margin-top:10px">The four holes</div>
+        <div class="holes" id="s2holes"></div>
+      </div>
+    </div>
+    <div class="predict" data-p="s2a">
+      <div class="tag">Guess first!</div>
+      <div class="q">Press <b>step before a coin</b> on the course's cabinet. What does it pay?</div>
+      <div class="opts"><button data-a="0">Nothing: no game is running</button><button data-a="1">An error</button><button data-a="2" data-right>A win: 1.0 tickets, game over</button></div>
+      <div class="why">A win. A fresh cabinet's word is the empty string; masking it leaves no blanks, so "no blanks left" reads as solved: reward 1.0, done, and the message <i>"You got it! The word was ''."</i> Over plain HTTP, where every call is a fresh environment, <b>every step is a win</b>. A rollout that ever skips <code>reset()</code> scores 100% for nothing.</div>
+    </div>
+    <div class="predict" data-p="s2b">
+      <div class="tag">Guess first!</div>
+      <div class="q">Leave the step cap off and press the <b>same right letter ten times</b>. What can a player do to the course's cabinet?</div>
+      <div class="opts"><button data-a="0">Nothing much; a repeat just doesn't count</button><button data-a="1" data-right>Play forever without ever losing</button><button data-a="2">Win faster</button></div>
+      <div class="why">Play forever. In the course's game a repeated <i>correct</i> letter costs no attempt (only wrong guesses do), and the environment has no step limit, so a player pressing the same right letter never reaches game over. The notebook's guard doesn't change that; it only stops a repeated <i>wrong</i> letter from being charged twice. Harmless, until step 3 hangs a prize on it. Every cabinet needs a clock.</div>
+    </div>
+    <div class="say" data-say="s2">
+      <div class="tag">Say it out loud</div>
+      <div class="line">Check what the cabinet does on inputs a good player would never send. An optimizer will send them. Errors pay nothing; that's the safe answer.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STEP 3 ============ -->
+<section id="s3" data-title="The Prize Rules" data-n="3">
+  <div class="card">
+    <div class="scene" data-art="s3"></div>
+    <h2>3 · The prize rules: which player would training pick?</h2>
+    <p class="lede">A trainer doesn't know what you <i>meant</i>. It raises the average tickets. So for any <span class="g" data-g="reward">reward</span> rule the only question is: <b>which player does it rank first?</b> If that isn't the player you want, training will find the one you don't. Three rules, three players. The Farmer never wins a game; it finds one correct letter and presses it forever.</p>
+    <p class="covers">Covers <b>Module 5 · reward functions, shaped vs binary</b> · TRL's OpenEnv docs, "Tips for reward functions" · Finishing School step 6 (the group is the critic)</p>
+  </div>
+  <div class="card">
+    <div class="pg">
+      <div class="panel">
+        <div class="lbl">The prize rule (set on the cabinet, because the environment owns the reward)</div>
+        <div class="seg" id="s3rule"></div>
+        <div class="callout co-i" id="s3rulenote"></div>
+        <label class="tg" style="margin-top:8px"><input type="checkbox" id="s3guard"><span class="sw"></span>Notebook guard: repeats are free</label>
+        <div class="sl"><div class="sl-h"><span>Step cap (the harness's clock)</span><b id="s3capv">50</b></div><input type="range" id="s3cap" min="10" max="100" step="5" value="50" aria-label="Step cap"></div>
+      </div>
+      <div>
+        <div class="lbl">Average tickets per game · Frequency and Farmer are <b>exact</b> (one game per word, deterministic) · Random is simulated over 300 games</div>
+        <div class="pchart" id="s3chart"></div>
+        <div class="verdict" id="s3verdict"></div>
+        <table class="ptab2" id="s3tab"></table>
+      </div>
+    </div>
+    <h3>The group of 2: what GRPO sees</h3>
+    <p class="lede sm"><span class="g" data-g="grpo">GRPO</span> scores a <span class="g" data-g="group">group</span> of games on the same prompt against their own average. The course trains with groups of <b>2</b>. If the two games score the same, the <span class="g" data-g="advantage">advantage</span> is zero and that group teaches nothing. Same player, same word, two games: how often do they score differently under the rule above?</p>
+    <div class="pairs" id="s3pairs"></div>
+    <div class="predict" data-p="s3a">
+      <div class="tag">Guess first!</div>
+      <div class="q">Rule 2 pays +0.1 every time the guessed letter is in the word. Who scores highest?</div>
+      <div class="opts"><button data-a="0">Frequency, it plays best</button><button data-a="1" data-right>The Farmer, without winning once</button><button data-a="2">Random, by luck</button></div>
+      <div class="why">The Farmer, at about 4.9 tickets a game against Frequency's 0.67. It never wins; it collects 0.1 on every one of ~49 presses of the same letter, because rule 2 pays for <i>touching</i> a correct letter, not for <i>progress</i>, and repeats are free of consequence. TRL's own experiments found binary rewards "gave cleaner training signals than shaped rewards" for exactly this reason. Rule 3 pays only for new letters and caps the total, so the Farmer banks one letter's share (~0.09) and stops earning.</div>
+    </div>
+    <div class="predict" data-p="s3b">
+      <div class="tag">Guess first!</div>
+      <div class="q">Frequency presses the same letters in the same order every game. What does a GRPO group of two Frequency games teach?</div>
+      <div class="opts"><button data-a="0">Twice as much as one game</button><button data-a="1" data-right>Nothing: identical scores, zero advantage</button><button data-a="2">It depends on the word</button></div>
+      <div class="why">Nothing. Two identical games score identically, whatever the word, so the group has no spread and every advantage is 0. GRPO needs the player to <b>vary</b>: for an LLM that's sampling temperature; a greedy decoder would have the Farmer's problem in reverse. And under the binary rule even Random's two games differ only ~5% of the time, since both usually lose; under rule 3 they differ ~79% of the time. That's the honest case for shaping when groups are tiny and wins are rare.</div>
+    </div>
+    <div class="say" data-say="s3">
+      <div class="tag">Say it out loud</div>
+      <div class="line">The trainer maximizes the tickets, whatever I meant. Pay for progress, cap it, and make sure the player varies, or the group teaches nothing.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STEP 4 ============ -->
+<section id="s4" data-title="The Tournament" data-n="4">
+  <div class="card">
+    <div class="scene" data-art="s4"></div>
+    <h2>4 · The tournament: the same cabinet, read by people</h2>
+    <p class="lede">An <span class="g" data-g="eval">eval</span> is the cabinet with a scoreboard: a fixed set of games, a <span class="g" data-g="verifier">verifier</span> inside, and a pass rate for a human to read. Module 2's "policy competition" was one, without the two things that make a score believable: a floor and a ceiling, and error bars. This scoreboard has both, plus an <span class="g" data-g="aatest">A/A test</span>: two identical Random players who must post the same score, or the harness itself is broken.</p>
+    <p class="covers">Covers <b>Module 2 · policies and the competition</b> · the LangChain evals vocabulary (verifier, environment, harness) · TRL's "if a capable model can't beat random…"</p>
+  </div>
+  <div class="card">
+    <div class="pg">
+      <div class="panel">
+        <div class="sl"><div class="sl-h"><span>Games per player</span><b id="s4nv">250</b></div><input type="range" id="s4n" min="10" max="1000" step="10" value="250" aria-label="Games per player"></div>
+        <label class="tg"><input type="checkbox" id="s4leak" checked><span class="sw"></span>The course's cabinet (word on the back panel)</label>
+        <div class="btnrow"><button class="ghost" id="s4reseed" type="button">Re-run with new dice</button></div>
+        <div class="callout co-i">Frequency's <b>true</b> win rate is exactly <b>20%</b>: it wins on 2 of the 10 words (<i>neural</i>, <i>tensor</i>) and no others. The dashed line marks it. Watch how far a single run lands from the truth.</div>
+      </div>
+      <div>
+        <div class="board" id="s4board"></div>
+        <div class="aa" id="s4aa"></div>
+        <div class="callout co-w" id="s4flag" style="display:none"></div>
+        <div class="callout co-i" id="s4find"></div>
+        <div class="lbl" style="margin-top:12px">Frequency, ten separate runs at this size (true rate 20%)</div>
+        <div class="spread" id="s4spread"></div>
+        <div class="spreadcap" id="s4spreadcap"></div>
+      </div>
+    </div>
+    <div class="predict" data-p="s4a">
+      <div class="tag">Guess first!</div>
+      <div class="q">Frequency's true rate is exactly 20%. Over 100 games, how far off can one run land?</div>
+      <div class="opts"><button data-a="0">A point or two at most</button><button data-a="1" data-right>Seven points or more</button><button data-a="2">It always reads 20%</button></div>
+      <div class="why">Seven points or more, easily. The standard error of a 20% rate over 100 games is √(0.2 × 0.8 / 100) = 4 points, so one run in three lands more than 4 points off and one in twenty more than 8. When the lab behind this page was built, ten runs of 100 games read anywhere from 14% to 28%. One eval run is a sample.</div>
+    </div>
+    <div class="predict" data-p="s4b">
+      <div class="tag">Guess first!</div>
+      <div class="q">Random A scores 5% and Random B scores 2% over 250 games each. Is the harness biased?</div>
+      <div class="opts"><button data-a="0" data-right>No, that's inside the noise</button><button data-a="1">Yes, they should match exactly</button><button data-a="2">Can't tell without more players</button></div>
+      <div class="why">No. Pooled over 500 games at ~3.5%, the standard error of the difference is about 1.6 points, so a 3-point gap is under two standard errors: ordinary luck. The test only alarms past 3.5 standard errors, where a correct harness false-alarms about once in ten thousand runs. A first draft of this test alarmed 1.7% of the time on a working harness, which is how often you'd have "found a bug" that wasn't there.</div>
+    </div>
+    <div class="say" data-say="s4">
+      <div class="tag">Say it out loud</div>
+      <div class="line">One run is a sample. Floor, ceiling, error bars, and an A/A test before I believe a gap. A hundred percent means somebody read the answer.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STEP 5 ============ -->
+<section id="s5" data-title="Arcade vs Pond" data-n="5">
+  <div class="card">
+    <div class="scene" data-art="s5"></div>
+    <h2>5 · Arcade vs pond: when to put the cabinet on the network</h2>
+    <p class="lede">The course argues that in-process environments (Gym-style) are "a disaster for production." That's true for LLM training, where every step waits ~200 ms for the model to think and the game itself may be a code sandbox you don't want inside your trainer. It's the opposite for <span class="g" data-g="microduck">Microduck</span>, whose 4,096 ducklings advance together as one tensor on one GPU; a network hop per step would cost more than the whole step. Move the sliders and watch which term owns the wall clock.</p>
+    <p class="covers">Covers <b>Module 1 · why Gym falls short</b> · the course's scaling appendix (WebSocket vs HTTP) · Policy Pond step 6 (Microduck's real config)</p>
+  </div>
+  <div class="card">
+    <div class="pg">
+      <div class="panel">
+        <div class="lbl">Preset</div>
+        <div class="seg" id="s5preset"></div>
+        <div class="sl"><div class="sl-h"><span>Policy time per step (the player thinking)</span><b id="s5polv"></b></div><input type="range" id="s5pol" min="0" max="12" step="1" value="8" aria-label="Policy time per step"></div>
+        <div class="sl"><div class="sl-h"><span>Environment time per step (the game logic)</span><b id="s5envv"></b></div><input type="range" id="s5env" min="0" max="12" step="1" value="6" aria-label="Environment time per step"></div>
+        <div class="sl"><div class="sl-h"><span>Network round trip per step</span><b id="s5netv"></b></div><input type="range" id="s5net" min="0" max="10" step="1" value="8" aria-label="Network time per step"></div>
+        <div class="sl"><div class="sl-h"><span>Environments stepping together</span><b id="s5envsv"></b></div><input type="range" id="s5envs" min="0" max="6" step="1" value="2" aria-label="Environments"></div>
+        <div class="sl"><div class="sl-h"><span>Steps per rollout</span><b id="s5stepsv"></b></div><input type="range" id="s5steps" min="0" max="5" step="1" value="1" aria-label="Steps per rollout"></div>
+        <div class="callout co-w"><b>A teaching model.</b> The times are order-of-magnitude defaults on sliders, not measurements; the arithmetic (one step's wall time = policy + environment + network) is the whole model.</div>
+      </div>
+      <div>
+        <div class="arch" id="s5arch"></div>
+        <div class="callout co-i" id="s5note"></div>
+      </div>
+    </div>
+    <div class="predict" data-p="s5a">
+      <div class="tag">Guess first!</div>
+      <div class="q">On the Microduck preset, what share of a service-style step is the network?</div>
+      <div class="opts"><button data-a="0">Under 10%</button><button data-a="1">About half</button><button data-a="2" data-right>Nearly all of it</button></div>
+      <div class="why">Nearly all of it: about 99%. A batched physics tick and a small MLP forward pass together take a fraction of a millisecond for all 4,096 ducks, and a network round trip is tens of milliseconds. That's why mjlab keeps every duck in the trainer's process as GPU tensors, and why OpenEnv doesn't. Same loop, opposite economics.</div>
+    </div>
+    <div class="say" data-say="s5">
+      <div class="tag">Say it out loud</div>
+      <div class="line">Put the cabinet on the network when the player is slow or the game is dangerous. Keep it in-process when the game is a physics tick.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ REVIEW BOARD ============ -->
+<section id="cap" data-title="Review Board" data-n="★">
+  <div class="card">
+    <div class="scene" data-art="cap"></div>
+    <h2>★ · Review board: three broken cabinets</h2>
+    <p class="lede">Three environments came back from training with suspicious scores. For each, read the symptom and the evidence, name the cause, then pick the fix. The tempting wrong fixes are there too, and each fails for a stated reason.</p>
+    <p class="covers">Covers <b>everything above</b> · the study pack's evals bridge §4 checklist</p>
+    <div class="fixed" id="capstamp" hidden>All three cabinets back in service</div>
+  </div>
+  <div id="capcases"></div>
+  <div class="card">
+    <div class="predict" data-p="capa">
+      <div class="tag">Guess first!</div>
+      <div class="q">A model scores 100% on a public benchmark whose problems and solutions are on GitHub. What did you learn about its skill?</div>
+      <div class="opts"><button data-a="0">It's excellent at the task</button><button data-a="1" data-right>Less than it seems; the answers may be in its training data</button><button data-a="2">Nothing at all</button></div>
+      <div class="why">Less than it seems. That's a <span class="g" data-g="leak">leak</span> at the dataset level, called contamination: the answer sheet was in the training data rather than in the state. A private task the model has never seen is the cleaner test. The word "leakage" covers both.</div>
+    </div>
+    <div class="say" data-say="cap">
+      <div class="tag">Say it out loud</div>
+      <div class="line">A hundred percent is a bug report. Find where the answer leaked or what the reward paid for, and fix the cabinet, not the player.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FIELD TEST ============ -->
+<section id="ft" data-title="Field Test" data-n="✓">
+  <div class="card">
+    <h2>✓ · Field test</h2>
+    <p class="lede">Eight questions, each answered by <b>setting up a widget</b> in steps 0–5 the way the question says and reading off the result. Graded instantly, with rounding tolerance.</p>
+    <div id="ftq"></div>
+    <div class="btnrow"><button class="act" id="ftgo" type="button">Grade me</button><span id="ftscore" class="muted" style="align-self:center"></span></div>
+    <p class="lede sm mt8 muted">Fix all three cabinets on the review board and score 6 or better here, and the arcade posts your high score.</p>
+  </div>
+  <div class="card hs-card" id="hscard" hidden>
+    <div class="hs">
+      <div class="hst">High Score</div>
+      <div class="hsl">The bearer played a real environment, found the answer sheet in its back panel and sealed it, sent it the moves a good player never would, watched a farmer beat an honest player under a careless reward, and ran a tournament with error bars and an A/A test.</div>
+      <div class="hsrow"><div><span id="hsscore"></span><small>field test</small></div><div>3 / 3<small>cabinets fixed</small></div><div><span id="hsdate"></span><small>posted</small></div></div>
+      <div class="hsline">Anything the client can fetch, the player can see. The trainer maximizes the tickets, whatever you meant.</div>
+    </div>
+    <div class="btnrow"><button class="ghost" id="hsprint" type="button">Print the high score</button><span class="muted hand" style="align-self:center">It prints on its own page.</span></div>
+  </div>
+  <div class="card">
+    <h3>What's exact and what's a teaching model</h3>
+    <p class="lede sm"><b>Exact:</b> the Hangman environment is the OpenEnv course's Module 4 game, logic for logic, including its bugs, and its behaviour on the real server (openenv-core 0.3.0) was checked call by call before this page was written. Frequency's and the Farmer's averages are exact expectations: one game per word over the course's ten words, drawn uniformly. The standard errors and the A/A test are the plain binomial formulas.</p>
+    <p class="lede sm mt8"><b>Simulated:</b> Random's and the Cheater's scores, and the "two games differ" rates, come from a seeded pseudo-random generator, so they repeat exactly across reloads but are samples, not truths (Random's true win rate is about 2.3%). <b>Illustrative:</b> step 5's times are order-of-magnitude defaults on sliders; the review board's three cases are composites, not incidents.</p>
+    <p class="lede sm mt8"><b>The environment is real; the numbers about it were measured; the timing model is a sketch.</b></p>
+  </div>
+  <div class="card">
+    <h3>Where to go deeper</h3>
+    <ul class="srcs">
+      <li>The <a href="https://github.com/huggingface/openenv-course" target="_blank" rel="noopener">OpenEnv course</a> (five modules with notebooks), and the <a href="https://github.com/meta-pytorch/OpenEnv" target="_blank" rel="noopener">OpenEnv repo</a>: its <code>rfcs/</code> folder explains rubrics (composable rewards) and agentic harnesses.</li>
+      <li><a href="https://huggingface.co/docs/trl/main/en/openenv" target="_blank" rel="noopener">TRL's OpenEnv integration</a>: <code>environment_factory</code>, the reward-function tips this page quotes, and the concurrency note.</li>
+      <li><a href="https://bakulbadwal.github.io/policy-pond/" target="_blank" rel="noopener">Policy Pond</a> for the learner (REINFORCE, PPO, GAE) and <a href="https://bakulbadwal.github.io/finishing-school/" target="_blank" rel="noopener">Finishing School</a> for the LLM learner (SFT, DPO, GRPO). This lab is the world in between.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Sources</h3>
+    <ul class="srcs">
+      <li>Hugging Face, <i>Building RL Environments with OpenEnv</i>, Modules 1–5 (commit 57ea985, March 2026): the RL loop, the 3-method interface, typed models, deployment, the Module 4 word game, GRPO with TRL</li>
+      <li>meta-pytorch/OpenEnv, <code>main</code> (26 Sep 2026): <code>src/openenv/core/env_server</code> (<code>create_fastapi_app</code>, stateless HTTP routes, <code>max_concurrent_envs</code>), <code>core/rubrics</code>, <code>rfcs/004-rubrics.md</code>, <code>rfcs/005-agentic-harnesses.md</code>; PyPI <code>openenv-core</code> 0.3.0, against which the word game was run</li>
+      <li>TRL documentation, <i>OpenEnv Integration for Training LLMs with Environments</i>: <code>environment_factory</code>, "Tips for reward functions" (binary rewards, check the final state, test against a random baseline), <code>max_completion_length</code> across turns, server concurrency</li>
+      <li>The local lab behind this page (<code>_study/openenv-course/lab</code>): Frequency wins on <i>neural</i> and <i>tensor</i> only; the Farmer's 4.92 / 0.087 / 0 under the three rules; 1,000 games of Frequency pooled to 20.0%; the A/A false-alarm rate by 40,000-trial simulation</li>
+      <li>Pollen Robotics, <code>microduck_rl</code> (mjlab): 4,096 parallel environments, PPO with GAE λ = 0.95, actor and critic observations</li>
+      <li>"You're Not AI-Fluent Until You Understand Evals" (LangChain, 2026): verifier, environment, eval suite, harness engineering, trace</li>
+    </ul>
+    <p class="lede sm">The sibling labs: <a href="https://bakulbadwal.github.io/policy-pond/" target="_blank" rel="noopener">Policy Pond</a> (how a robot learns) and <a href="https://bakulbadwal.github.io/finishing-school/" target="_blank" rel="noopener">Finishing School</a> (how a language model gets finished).</p>
+    <div class="btnrow"><button class="ghost" id="reset" type="button">Reset my progress</button></div>
+  </div>
+</section>
+</div>
+
+<div id="tip" role="tooltip"></div>
+<footer>Reward Arcade · built by Bakul Badwal (UVA Darden MBA ’27) with Claude Code · sibling labs: <a href="https://bakulbadwal.github.io/policy-pond/" target="_blank" rel="noopener">Policy Pond</a> · <a href="https://bakulbadwal.github.io/finishing-school/" target="_blank" rel="noopener">Finishing School</a> · a real environment, measured numbers, one sketch</footer>
+
+<script src="js/art/arcade.js?v=20260926a"></script>
+<script src="js/glossary.js?v=20260926a"></script>
+<script src="js/core.js?v=20260926a"></script>
+<script src="js/app.js?v=20260926a"></script>
+</body>
+</html>
