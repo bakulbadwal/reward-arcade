@@ -6,6 +6,10 @@
 
 ![Reward Arcade: a Busytown-style cutaway of an arcade hall, where a kid plays a Hangman cabinet and every control is labelled with the OpenEnv method it stands for](docs/hero.png)
 
+![Step 3, the prize rules: switching the reward from 1 ticket per win to +0.1 per correct letter makes the optimizer pick the Farmer, a player that never wins, at 4.92 tickets a game; the capped progress rule hands the pick back to Frequency](docs/linkedin/reward-arcade-carousel.gif)
+
+*Step 3 in seven seconds: the same three players under three reward rules. Under naive partial credit the optimizer picks the Farmer, which never wins a game.*
+
 The environment is an **arcade cabinet**: a sealed box with three controls. `reset()` is the **coin slot**, `step(action)` is the **joystick**, the observation is the **front glass**, `state()` is the **back panel behind the service hatch**, the reward is the **tickets**, and the policy is the **kid at the cabinet**. An eval is the same cabinet with a **scoreboard**. A leak is the **answer sheet taped inside the hatch**; reward hacking is the **ticket jackpot glitch**. Hold that picture and the rest follows, from OpenEnv's three methods to why a robot keeps its simulator in-process.
 
 ## What's inside
